@@ -1,4 +1,5 @@
 #!/bin/ksh -x
+set
 configured_interfaces_list="cnmac0 cnmac2"
 src_dir="/root/bin/iscdhclient6/src"
 
@@ -26,8 +27,17 @@ configure_prefixed_addrs() {
   set -x
   if [ "$#" -eq 2 ]
   then \
-    ifconfig "$1" inet6 "$2" eui64 alias
-    ifconfig "$1" inet6 "${2}1" alias
+    ifconfig "$1" inet6 "$2" eui64 pltime "$new_preferred_life" vltime "$new_max_life" alias
+    ifconfig "$1" inet6 "${2}1" pltime "$new_preferred_life" vltime "$new_max_life" alias
+  fi
+}
+
+deconfigure_prefixed_addrs() {
+  set -x
+  if [ "$#" -eq 2 ]
+  then \
+    ifconfig "$1" inet6 "$2" eui64 -alias
+    ifconfig "$1" inet6 "${2}1" -alias
   fi
 }
 
@@ -62,8 +72,29 @@ er_dhcpv6_bind() {
   fi
 }
 
+er_dhcpv6_renew() {
+  set -x
+  if [ -z "$new_ip6_prefix" ]
+  then \
+    return 1
+  fi
+  prefixtoconfigure=`echo "$new_ip6_prefix" | awk -f "$src_dir/getUsablePrefixAddrV6.awk"`
+  if [ -n "$prefixtoconfigure" ]
+  then \
+    for configured_interface in $configured_interfaces_list
+    do \
+      configured_addrs=`find_configured_addrs "$configured_interface"`
+      if [ -n "$configured_addrs" ]
+      then \
+	deconfigure_prefixed_addrs "$configured_interface" `create_prefixed_addrs "$configured_interface" "$new_ip6_prefix"`
+	configure_prefixed_addrs "$configured_interface" `create_prefixed_addrs "$configured_interface" "$new_ip6_prefix"`
+      fi
+    done
+  fi
+}
+
 case $reason in 
-	( 'BOUND6' | 'REBIND6' ) er_dhcpv6_bind ;;
-	( 'RENEW6' ) ;;
+	( 'BOUND6' | 'REBIND6' )  er_dhcpv6_bind  ;;
+	( 'RENEW6' )              er_dhcpv6_renew ;;
 	( * ) echo "WTF's that?";;
 esac
